@@ -1,0 +1,64 @@
+#!/bin/bash
+#
+# Run a command in an isolated nix environment
+#
+set -euo pipefail
+
+# TODO: allow the host tools to be overriden
+#       if this is supported, the host tools will need to be included in the
+#       path of 'host_tools_bin'
+
+# These are the tools that are expected to be provided by the host
+host_build_tools="mkdir ln mv cp rm which uname bash tr awk git"
+host_test_tools="cat dirname wc head diff grep date sed"
+
+if [ "$#" == "0" ]; then
+  echo "Run a command in an isolated environment restricted to a predefined"
+  echo "set of programs and packages."
+  echo
+  echo "Usage: iso <profile> <command>..."
+  echo
+  echo "Predefined Profiles:"
+  echo " dmd-build  profile to build dmd using dmd"
+  echo " ldc-build  profile to build dmd using ldc"
+  echo " dmd-test   profile to test dmd"
+  echo
+  echo "Example: iso dmd-build dmd -run hello.d"
+  exit 1
+fi
+
+profile=$1
+shift
+
+echorun() {
+  echo "$@"
+  "$@"
+}
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+
+nix_init=~/.nix-profile/etc/profile.d/nix.sh
+
+if [ -f $nix_init ]; then
+  echo Nix is installed
+else
+  echo Installing Nix...
+  echorun curl https://nixos.org/nix/install -o ~/install_nix --fail
+  chmod a+x ~/install_nix
+  ~/install_nix
+  rm ~/install_nix
+fi
+
+# the nix init script references unset variables
+set +u
+echorun source $nix_init
+set -u
+
+# unset environment variable because it causes bash to print warnings
+#echorun unset LC_ALL
+
+if [ "$#" == "0" ]; then
+  echorun exec nix-shell --pure --argstr profile $profile $script_dir/shell.nix
+else
+  echorun exec nix-shell --pure --argstr profile $profile $script_dir/shell.nix --run "$*"
+fi
